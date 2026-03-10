@@ -10,13 +10,15 @@
     <nav class="main-nav">
         <a href="/" class="nav-logo">Budget Tracker</a>
         <div class="nav-links">
+            <a href="/" class="nav-link {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="/transactions" class="nav-link {% if active == 'transactions' %}active{% endif %}">Transactions</a>
             <a href="/import" class="nav-link {% if active == 'import' %}active{% endif %}">Import</a>
-            <span class="nav-link disabled">Dashboard</span>
-            <span class="nav-link disabled">Transactions</span>
         </div>
     </nav>
     <main class="container">
         {% block content %}{% endblock %}
     </main>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>

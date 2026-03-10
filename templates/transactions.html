@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Transactions — Budget Tracker{% endblock %}
+{% block content %}
+
+{% if not month %}
+<div class="empty-state">
+    <span class="empty-icon">&#128203;</span>
+    <h2>Aucune donnee</h2>
+    <p>Importez un releve BoursoBank pour voir vos transactions.</p>
+    <a href="/import" class="btn btn-primary">Importer un releve</a>
+</div>
+{% else %}
+
+<!-- Month navigation -->
+<div class="month-nav">
+    <button class="btn btn-icon" id="prev-month" title="Mois precedent">&larr;</button>
+    <h1 class="month-title" id="current-month">{{ month }}</h1>
+    <button class="btn btn-icon" id="next-month" title="Mois suivant">&rarr;</button>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar">
+    <select id="filter-category" class="filter-select">
+        <option value="">Toutes les categories</option>
+        {% for cat in categories %}
+        <option value="{{ cat.id }}">{{ cat.icon }} {{ cat.name }}</option>
+        {% endfor %}
+    </select>
+    <input type="text" id="filter-search" class="filter-input" placeholder="Rechercher...">
+</div>
+
+<!-- Transactions table -->
+<div class="table-wrapper">
+<table class="table transaction-table" id="tx-table">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Libelle</th>
+            <th class="text-right">Montant</th>
+            <th>Categorie</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for tx in transactions %}
+        <tr class="tx-row" data-id="{{ tx.id }}" data-category="{{ tx.category_id }}" data-libelle="{{ tx.libelle|lower|e }}">
+            <td class="tx-date">{{ tx.date_operation }}</td>
+            <td class="tx-libelle">{{ tx.libelle[:60] }}</td>
+            <td class="text-right {{ 'income' if tx.montant > 0 else 'expense' }}">
+                {{ "+" if tx.montant > 0 else "" }}{{ "%.2f"|format(tx.montant) }} &euro;
+            </td>
+            <td>
+                <button class="category-badge" data-tx-id="{{ tx.id }}" data-current-cat="{{ tx.category_id }}"
+                        style="border-color: {{ tx.category_color }}; color: {{ tx.category_color }}">
+                    {{ tx.category_icon }} {{ tx.category_name }}
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<p class="tx-count" id="tx-count">{{ transactions|length }} transactions</p>
+
+<!-- Category correction modal -->
+<div class="modal-overlay" id="modal-overlay" style="display:none">
+    <div class="modal">
+        <h3>Changer la categorie</h3>
+        <p class="modal-tx-info" id="modal-tx-info"></p>
+        <select id="modal-category-select" class="filter-select">
+            {% for cat in categories %}
+            <option value="{{ cat.id }}">{{ cat.icon }} {{ cat.name }}</option>
+            {% endfor %}
+        </select>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" id="modal-cancel">Annuler</button>
+            <button class="btn btn-primary" id="modal-save">Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if month %}
+<script src="/static/js/app.js"></script>
+<script>
+    const MONTHS = {{ months | tojson }};
+    const CURRENT_MONTH = {{ month | tojson }};
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initMonthNav(MONTHS, CURRENT_MONTH);
+        initFilters();
+        initCategoryCorrection();
+    });
+</script>
+{% endif %}
+{% endblock %}

@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import re
 
 import aiohttp_jinja2
 import jinja2
@@ -11,13 +12,20 @@ from dotenv import load_dotenv
 from categorizer import categorize_transactions
 from db import (
     get_categories,
+    get_daily_balances,
     get_import_by_hash,
     get_import_history,
+    get_month_summary,
     get_months,
+    get_solde_initial,
+    get_top_expenses,
+    get_transaction_by_id,
     get_transactions,
     init_db,
     insert_import,
+    insert_learned_pattern,
     insert_transactions,
+    update_transaction_category,
 )
 from parser import parse_boursobank
 
@@ -91,6 +99,8 @@ async def import_upload(request):
             result.get("period_start"),
             result.get("period_end"),
             len(transactions),
+            result.get("solde_initial"),
+            result.get("solde_final"),
         )
         insert_transactions(db, import_id, transactions)
 
@@ -113,9 +123,111 @@ def _render_import(request, result):
     )
 
 
-async def dashboard_redirect(request):
-    """GET / — Redirect to /import for Phase 1."""
-    raise web.HTTPFound("/import")
+async def dashboard_page(request):
+    """GET / — Dashboard mensuel."""
+    months = get_months(db)
+    month = request.query.get("month")
+    if not month:
+        month = months[0] if months else None
+
+    if not month:
+        return aiohttp_jinja2.render_template(
+            "dashboard.html",
+            request,
+            {"active": "dashboard", "month": None, "months": months},
+        )
+
+    summary = get_month_summary(db, month)
+    solde_initial = get_solde_initial(db, month)
+    daily_balances = get_daily_balances(db, month, solde_initial or 0)
+    top_expenses = get_top_expenses(db, month)
+
+    return aiohttp_jinja2.render_template(
+        "dashboard.html",
+        request,
+        {
+            "active": "dashboard",
+            "month": month,
+            "months": months,
+            "summary": summary,
+            "solde_initial": solde_initial,
+            "daily_balances": daily_balances,
+            "top_expenses": top_expenses,
+        },
+    )
+
+
+async def transactions_page(request):
+    """GET /transactions — Liste des transactions."""
+    months = get_months(db)
+    month = request.query.get("month")
+    if not month:
+        month = months[0] if months else None
+
+    transactions = get_transactions(db, month) if month else []
+    categories = get_categories(db)
+
+    return aiohttp_jinja2.render_template(
+        "transactions.html",
+        request,
+        {
+            "active": "transactions",
+            "month": month,
+            "months": months,
+            "transactions": transactions,
+            "categories": categories,
+        },
+    )
+
+
+async def api_update_category(request):
+    """POST /api/transactions/{id}/category — Change category + learn pattern."""
+    tx_id = int(request.match_info["id"])
+    data = await request.json()
+    new_category_id = data.get("category_id")
+
+    if not new_category_id:
+        return web.json_response(
+            {"ok": False, "error": "category_id required"}, status=400
+        )
+
+    tx = get_transaction_by_id(db, tx_id)
+    if not tx:
+        return web.json_response(
+            {"ok": False, "error": "Transaction not found"}, status=404
+        )
+
+    # Update category
+    update_transaction_category(db, tx_id, new_category_id)
+
+    # Learn pattern from libelle
+    pattern = _extract_pattern(tx["libelle"])
+    if pattern:
+        insert_learned_pattern(db, new_category_id, pattern)
+
+    # Return updated transaction
+    updated_tx = get_transaction_by_id(db, tx_id)
+    return web.json_response({"ok": True, "transaction": updated_tx})
+
+
+def _extract_pattern(libelle: str) -> str | None:
+    """Extract a reusable pattern from a transaction libelle.
+
+    Examples:
+    - 'CARTE 30/01/26 AGENALINE CB*0403' -> 'AGENALINE'
+    - 'VIR Virement depuis BoursoBank M LARRIEU ERICK' -> 'LARRIEU ERICK'
+    - 'PRLV FREE MOBILE' -> 'FREE MOBILE'
+    """
+    clean = libelle.upper()
+    clean = re.sub(r"CARTE\s+\d{2}/\d{2}/\d{2,4}\s+", "", clean)
+    clean = re.sub(r"\s*CB\*\d+", "", clean)
+    clean = re.sub(r"^(VIR INST|VIR|PRLV)\s+", "", clean)
+    clean = re.sub(r"VIREMENT DEPUIS BOURSOBANK\s*", "", clean)
+    clean = re.sub(r"R[EE]F\s*:.*", "", clean)
+    clean = clean.strip()
+    if len(clean) < 3:
+        return None
+    return clean
 
 
 async def api_dashboard(request):
@@ -148,11 +260,13 @@ def create_app():
 
     app.router.add_static("/static/", path="static", name="static")
 
-    app.router.add_get("/", dashboard_redirect)
+    app.router.add_get("/", dashboard_page)
+    app.router.add_get("/transactions", transactions_page)
     app.router.add_get("/import", import_page)
     app.router.add_post("/import", import_upload)
     app.router.add_get("/api/dashboard", api_dashboard)
     app.router.add_get("/api/months", api_months)
+    app.router.add_post("/api/transactions/{id}/category", api_update_category)
 
     return app
 

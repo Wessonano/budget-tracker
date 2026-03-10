@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Budget Tracker{% endblock %}
+{% block content %}
+
+{% if not month %}
+<div class="empty-state">
+    <span class="empty-icon">&#128202;</span>
+    <h2>Aucune donnee</h2>
+    <p>Importez un releve BoursoBank pour commencer.</p>
+    <a href="/import" class="btn btn-primary">Importer un releve</a>
+</div>
+{% else %}
+
+<!-- Month navigation -->
+<div class="month-nav">
+    <button class="btn btn-icon" id="prev-month" title="Mois precedent">&larr;</button>
+    <h1 class="month-title" id="current-month">{{ month }}</h1>
+    <button class="btn btn-icon" id="next-month" title="Mois suivant">&rarr;</button>
+</div>
+
+<!-- Stats cards -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <span class="stat-label">Depenses</span>
+        <span class="stat-value expense">{{ "%.2f"|format(summary.total_depenses) }} &euro;</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Revenus</span>
+        <span class="stat-value income">{{ "%.2f"|format(summary.total_revenus) }} &euro;</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Solde initial</span>
+        <span class="stat-value">{{ "%.2f"|format(solde_initial) if solde_initial is not none else "&mdash;" }} &euro;</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Transactions</span>
+        <span class="stat-value">{{ summary.tx_count }}</span>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="charts-grid">
+    <div class="chart-card">
+        <h2>Depenses par categorie</h2>
+        <div class="chart-container">
+            <canvas id="category-donut"></canvas>
+        </div>
+    </div>
+    <div class="chart-card">
+        <h2>Evolution du solde</h2>
+        <div class="chart-container">
+            <canvas id="balance-line"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Top expenses -->
+{% if top_expenses %}
+<div class="card">
+    <h2>Top depenses</h2>
+    <div class="top-expenses">
+        {% for tx in top_expenses %}
+        <div class="top-expense-row">
+            <span class="tx-category-badge" style="color: {{ tx.category_color }}">{{ tx.category_icon }}</span>
+            <span class="tx-libelle">{{ tx.libelle[:50] }}</span>
+            <span class="tx-amount expense">{{ "%.2f"|format(tx.montant|abs) }} &euro;</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if month %}
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/app.js"></script>
+<script>
+    const MONTHS = {{ months | tojson }};
+    const CURRENT_MONTH = {{ month | tojson }};
+    const CATEGORY_DATA = {{ summary.categories | tojson }};
+    const DAILY_BALANCES = {{ daily_balances | tojson }};
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initCategoryDonut('category-donut', CATEGORY_DATA);
+        initBalanceLine('balance-line', DAILY_BALANCES);
+        initMonthNav(MONTHS, CURRENT_MONTH);
+    });
+</script>
+{% endif %}
+{% endblock %}

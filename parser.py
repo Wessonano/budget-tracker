@@ -58,6 +58,7 @@ def parse_boursobank(pdf_path: str) -> dict:
         ["pdftotext", "-layout", pdf_path, "-"],
         capture_output=True,
         text=True,
+        timeout=30,
     )
     if result.returncode != 0:
         return {"ok": False, "error": f"pdftotext failed: {result.stderr}"}

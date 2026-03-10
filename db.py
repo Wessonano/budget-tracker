@@ -106,6 +106,13 @@ def init_db(data_dir: str) -> sqlite3.Connection:
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(SCHEMA)
+    # Migration: add solde columns to imports (Phase 2)
+    try:
+        db.execute("ALTER TABLE imports ADD COLUMN solde_initial REAL")
+        db.execute("ALTER TABLE imports ADD COLUMN solde_final REAL")
+        db.commit()
+    except sqlite3.OperationalError:
+        pass  # Columns already exist
     seed_categories(db)
     seed_patterns(db)
     return db
@@ -155,10 +162,12 @@ def insert_import(
     period_start: str | None,
     period_end: str | None,
     count: int,
+    solde_initial: float | None = None,
+    solde_final: float | None = None,
 ) -> int:
     cur = db.execute(
-        "INSERT INTO imports (filename, sha256, period_start, period_end, transaction_count) VALUES (?, ?, ?, ?, ?)",
-        (filename, sha256, period_start, period_end, count),
+        "INSERT INTO imports (filename, sha256, period_start, period_end, transaction_count, solde_initial, solde_final) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (filename, sha256, period_start, period_end, count, solde_initial, solde_final),
     )
     db.commit()
     return cur.lastrowid
@@ -219,5 +228,123 @@ def get_months(db: sqlite3.Connection) -> list[str]:
 def get_import_history(db: sqlite3.Connection) -> list[dict]:
     rows = db.execute(
         "SELECT * FROM imports ORDER BY created_at DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- Phase 2 functions ---
+
+
+def get_transaction_by_id(db: sqlite3.Connection, tx_id: int) -> dict | None:
+    """Get a single transaction with category info."""
+    row = db.execute(
+        """SELECT t.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+           FROM transactions t
+           LEFT JOIN categories c ON t.category_id = c.id
+           WHERE t.id = ?""",
+        (tx_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_transaction_category(db: sqlite3.Connection, tx_id: int, category_id: int):
+    """Update a transaction's category."""
+    db.execute(
+        "UPDATE transactions SET category_id = ? WHERE id = ?",
+        (category_id, tx_id),
+    )
+    db.commit()
+
+
+def insert_learned_pattern(db: sqlite3.Connection, category_id: int, pattern: str):
+    """Insert a learned pattern from manual category correction.
+    Priority 100 = higher than defaults (0), so learned patterns match first.
+    """
+    existing = db.execute(
+        "SELECT id FROM category_patterns WHERE pattern = ? AND category_id = ?",
+        (pattern, category_id),
+    ).fetchone()
+    if existing:
+        return
+    db.execute(
+        "INSERT INTO category_patterns (category_id, pattern, priority, learned) VALUES (?, ?, 100, 1)",
+        (category_id, pattern),
+    )
+    db.commit()
+
+
+def get_month_summary(db: sqlite3.Connection, month: str) -> dict:
+    """Get aggregated data for a month: totals by category, overall stats."""
+    rows = db.execute(
+        """SELECT c.id, c.name, c.icon, c.color,
+                  COALESCE(SUM(CASE WHEN t.montant < 0 THEN ABS(t.montant) ELSE 0 END), 0) as total_debit,
+                  COALESCE(SUM(CASE WHEN t.montant > 0 THEN t.montant ELSE 0 END), 0) as total_credit
+           FROM categories c
+           LEFT JOIN transactions t ON t.category_id = c.id
+                AND strftime('%Y-%m', t.date_operation) = ?
+           GROUP BY c.id
+           ORDER BY c.sort_order""",
+        (month,),
+    ).fetchall()
+    categories = [dict(r) for r in rows]
+
+    stats_row = db.execute(
+        """SELECT
+              COALESCE(SUM(CASE WHEN montant < 0 THEN ABS(montant) ELSE 0 END), 0) as total_depenses,
+              COALESCE(SUM(CASE WHEN montant > 0 THEN montant ELSE 0 END), 0) as total_revenus,
+              COUNT(*) as tx_count
+           FROM transactions
+           WHERE strftime('%Y-%m', date_operation) = ?""",
+        (month,),
+    ).fetchone()
+
+    return {
+        "categories": categories,
+        "total_depenses": stats_row["total_depenses"] if stats_row else 0,
+        "total_revenus": stats_row["total_revenus"] if stats_row else 0,
+        "tx_count": stats_row["tx_count"] if stats_row else 0,
+    }
+
+
+def get_daily_balances(db: sqlite3.Connection, month: str, solde_initial: float) -> list[dict]:
+    """Get daily cumulative balance for line chart."""
+    rows = db.execute(
+        """SELECT date_operation, SUM(montant) as day_total
+           FROM transactions
+           WHERE strftime('%Y-%m', date_operation) = ?
+           GROUP BY date_operation
+           ORDER BY date_operation""",
+        (month,),
+    ).fetchall()
+    balances = []
+    balance = solde_initial
+    for row in rows:
+        balance += row["day_total"]
+        balances.append({"date": row["date_operation"], "balance": round(balance, 2)})
+    return balances
+
+
+def get_solde_initial(db: sqlite3.Connection, month: str) -> float | None:
+    """Get solde_initial from import matching this month."""
+    row = db.execute(
+        """SELECT i.solde_initial FROM imports i
+           JOIN transactions t ON t.import_id = i.id
+           WHERE strftime('%Y-%m', t.date_operation) = ?
+           LIMIT 1""",
+        (month,),
+    ).fetchone()
+    return row["solde_initial"] if row and row["solde_initial"] is not None else None
+
+
+def get_top_expenses(db: sqlite3.Connection, month: str, limit: int = 5) -> list[dict]:
+    """Get top N expenses (largest debits) for the month."""
+    rows = db.execute(
+        """SELECT t.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+           FROM transactions t
+           LEFT JOIN categories c ON t.category_id = c.id
+           WHERE strftime('%Y-%m', t.date_operation) = ? AND t.montant < 0
+           ORDER BY t.montant ASC
+           LIMIT ?""",
+        (month, limit),
     ).fetchall()
     return [dict(r) for r in rows]
