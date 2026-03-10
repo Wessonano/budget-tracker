@@ -373,7 +373,140 @@ SHARE_TOKEN=<uuid4>
 
 **Validation** : app accessible sur budget.nanoserveur.fr, E2E screenshots OK
 
-## 13. Future Considerations
+## 13. E2E Tests (agent-browser)
+
+> Chaque phase inclut ses tests E2E. Exécutés via agent-browser après chaque `/execute`.
+> Screenshots sauvés dans `e2e-screenshots/`.
+> Skills E2E : `/Users/arnaud/mon-assistant/memory/skills`
+
+### Phase 1 — Import & Parser
+
+**T1.1 — Page d'import vide**
+- Ouvrir `/import`
+- Screenshot : page avec zone d'upload, aucun historique d'import
+- Vérifier : dark theme, titre visible, bouton upload
+
+**T1.2 — Upload PDF valide**
+- Uploader `Releve-compte-27-02-2026.pdf` via le formulaire
+- Screenshot : feedback après import (nombre de transactions, période, solde)
+- Vérifier : message de succès, >= 25 transactions parsées
+
+**T1.3 — Upload doublon**
+- Re-uploader le même PDF
+- Screenshot : message d'erreur "déjà importé"
+- Vérifier : pas de doublons en DB
+
+**T1.4 — Upload fichier invalide**
+- Tenter d'uploader un fichier non-PDF (ex: .txt)
+- Screenshot : message d'erreur clair
+- Vérifier : pas de crash serveur
+
+**T1.5 — Vérification DB**
+- `GET /api/dashboard?month=2026-02`
+- Vérifier JSON : transactions présentes, catégories assignées, totaux cohérents
+- Vérifier : solde initial 111,19€, solde final 107,52€
+
+### Phase 2 — Dashboard & Transactions
+
+**T2.1 — Dashboard mensuel**
+- Ouvrir `/` (dashboard)
+- Screenshot desktop (1280x800) : donut catégories + ligne de solde + stats
+- Vérifier : graphes rendus (canvas non vide), montants affichés
+
+**T2.2 — Dashboard mobile**
+- Screenshot mobile (375x667) : même page
+- Vérifier : responsive, pas de scroll horizontal, graphes lisibles
+
+**T2.3 — Liste transactions**
+- Ouvrir `/transactions`
+- Screenshot : liste complète des transactions du mois
+- Vérifier : date, libellé, montant, catégorie (icône + nom) pour chaque ligne
+
+**T2.4 — Filtre par catégorie**
+- Filtrer par "Bar / Tabac"
+- Screenshot : uniquement les transactions bar/tabac affichées
+- Vérifier : Le Balto, Tabac Poste, La Maison du Pero présents
+
+**T2.5 — Correction catégorie**
+- Cliquer sur la catégorie d'une transaction → changer vers une autre
+- Screenshot après modification
+- Vérifier : catégorie mise à jour, nouveau pattern créé en DB (learned=1)
+
+**T2.6 — Navigation mois**
+- Cliquer sur le sélecteur de mois / flèches navigation
+- Screenshot : vérifier que le mois change (ou message "pas de données")
+
+**T2.7 — Dashboard sans données**
+- Naviguer vers un mois sans import (ex: 2025-01)
+- Screenshot : état vide propre, message "aucune donnée"
+
+### Phase 3 — Enveloppes, Alertes & Partage
+
+**T3.1 — Page enveloppes vide**
+- Ouvrir `/budgets`
+- Screenshot : page vide avec bouton "Créer une enveloppe"
+
+**T3.2 — Créer enveloppe**
+- Créer enveloppe "Bar / Tabac" = 80€/mois
+- Screenshot : enveloppe créée avec barre de progression
+- Vérifier : barre colorée (vert/orange/rouge selon le montant déjà dépensé)
+
+**T3.3 — Enveloppe dépassée**
+- Créer enveloppe avec un plafond bas (ex: 10€) pour une catégorie déjà dépassée
+- Screenshot : barre rouge, pourcentage > 100%
+- Vérifier : alerte visuelle claire
+
+**T3.4 — Modifier/supprimer enveloppe**
+- Modifier le montant d'une enveloppe existante
+- Supprimer une enveloppe
+- Screenshot après chaque action
+
+**T3.5 — Alerte Discord**
+- Vérifier qu'un webhook Discord a été envoyé lors du dépassement (T3.3)
+- Screenshot du message Discord (si possible) ou vérifier les logs serveur
+
+**T3.6 — Page de partage (père)**
+- Ouvrir `/share/<token>`
+- Screenshot desktop : résumé mensuel (total dépenses, donut catégories, solde)
+- Vérifier : pas de détail transactions individuelles (vie privée)
+
+**T3.7 — Page de partage mobile**
+- Screenshot mobile (375x667) : même page
+- Vérifier : lisible, responsive, simple
+
+**T3.8 — Token invalide**
+- Ouvrir `/share/invalid-token`
+- Screenshot : page 404 ou message "lien invalide"
+
+**T3.9 — Comparaison mois/mois**
+- Sur le dashboard, vérifier la section comparaison
+- Screenshot : deltas par catégorie (si 2 mois de données disponibles)
+
+### Phase 4 — Déploiement & Production
+
+**T4.1 — Accès public**
+- Ouvrir `https://budget.nanoserveur.fr`
+- Screenshot : dashboard chargé via le tunnel Cloudflare
+- Vérifier : HTTPS, temps de chargement < 2s
+
+**T4.2 — Import en production**
+- Uploader un PDF sur la version production
+- Screenshot : feedback OK, transactions visibles
+
+**T4.3 — Partage en production**
+- Ouvrir `https://budget.nanoserveur.fr/share/<token>`
+- Screenshot : résumé accessible publiquement
+
+**T4.4 — PWA install**
+- Ouvrir sur mobile, vérifier le prompt "Ajouter à l'écran d'accueil"
+- Screenshot : manifest détecté, icône correcte
+
+**T4.5 — Parcours complet (smoke test)**
+1. Import PDF → 2. Dashboard → 3. Transactions → 4. Corriger catégorie → 5. Créer enveloppe → 6. Partage père
+- Screenshot à chaque étape
+- Vérifier : aucune erreur, flow naturel
+
+## 14. Future Considerations
 
 - **Export CSV BoursoBank** : parser alternatif si BoursoBank propose le CSV
 - **Multi-banques** : parser générique avec plugins par banque
