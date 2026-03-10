@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Budget Tracker{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="main-nav">
+        <a href="/" class="nav-logo">Budget Tracker</a>
+        <div class="nav-links">
+            <a href="/import" class="nav-link {% if active == 'import' %}active{% endif %}">Import</a>
+            <span class="nav-link disabled">Dashboard</span>
+            <span class="nav-link disabled">Transactions</span>
+        </div>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>
