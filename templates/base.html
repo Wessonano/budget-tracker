@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Budget Tracker{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#e94560">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 </head>
 <body>
     <nav class="main-nav">
@@ -21,5 +26,10 @@
     </main>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     {% block scripts %}{% endblock %}
+    <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js');
+    }
+    </script>
 </body>
 </html>

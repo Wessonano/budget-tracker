@@ -5,7 +5,7 @@ venv/
 data/
 uploads/
 *.db
+*.pdf
 .DS_Store
-tests/sample-boursobank.pdf
 tests/sample-boursobank-layout.txt
 e2e-screenshots/
