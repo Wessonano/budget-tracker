@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Enveloppes — Budget Tracker{% endblock %}
+{% block content %}
+
+{% if not month %}
+<div class="empty-state">
+    <span class="empty-icon">&#128176;</span>
+    <h2>Aucune donnee</h2>
+    <p>Importez un releve pour gerer vos enveloppes.</p>
+    <a href="/import" class="btn btn-primary">Importer un releve</a>
+</div>
+{% else %}
+
+<!-- Month navigation -->
+<div class="month-nav">
+    <button class="btn btn-icon" id="prev-month">&larr;</button>
+    <h1 class="month-title" id="current-month">{{ month }}</h1>
+    <button class="btn btn-icon" id="next-month">&rarr;</button>
+</div>
+
+<!-- Budget list -->
+<div class="budget-list">
+    {% for b in budgets %}
+    <div class="budget-card">
+        <div class="budget-header">
+            <span class="budget-category">{{ b.category_icon }} {{ b.category_name }}</span>
+            <span class="budget-amounts">{{ "%.2f"|format(b.spent) }}&euro; / {{ "%.2f"|format(b.amount_max) }}&euro;</span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill {% if b.percent >= 100 %}critical{% elif b.percent >= 80 %}warning{% elif b.percent >= 60 %}caution{% endif %}"
+                 style="width: {{ [b.percent, 100] | min }}%">
+            </div>
+        </div>
+        <div class="budget-footer">
+            <span class="budget-percent {% if b.percent >= 100 %}critical{% elif b.percent >= 80 %}warning{% endif %}">
+                {{ "%.0f"|format(b.percent) }}%
+            </span>
+            <div class="budget-actions">
+                <button class="btn-small btn-edit" onclick="editBudget({{ b.id }}, {{ b.amount_max }})">Modifier</button>
+                <button class="btn-small btn-delete" onclick="deleteBudget({{ b.id }})">Supprimer</button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Edit modal (hidden) -->
+<div class="modal-overlay" id="edit-modal" style="display:none">
+    <div class="modal">
+        <h3>Modifier l'enveloppe</h3>
+        <form method="post" action="/budgets">
+            <input type="hidden" name="budget_id" id="edit-budget-id">
+            <input type="hidden" name="category_id" value="0" id="edit-category-id">
+            <input type="hidden" name="month" value="{{ month }}">
+            <div class="form-group">
+                <label>Montant max (&euro;/mois)</label>
+                <input type="number" name="amount_max" id="edit-amount" step="0.01" min="1" class="filter-input" required>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('edit-modal').style.display='none'">Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Create new envelope -->
+{% if available_categories %}
+<div class="card">
+    <h2>Creer une enveloppe</h2>
+    <form method="post" action="/budgets" class="budget-create-form">
+        <input type="hidden" name="month" value="{{ month }}">
+        <div class="form-row">
+            <select name="category_id" class="filter-select" required>
+                <option value="">Choisir une categorie</option>
+                {% for cat in available_categories %}
+                <option value="{{ cat.id }}">{{ cat.icon }} {{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" name="amount_max" placeholder="Budget max (EUR)" step="0.01" min="1" class="filter-input" required>
+            <button type="submit" class="btn btn-primary">Creer</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if month %}
+<script src="/static/js/app.js"></script>
+<script>
+    const MONTHS = {{ months | tojson }};
+    const CURRENT_MONTH = {{ month | tojson }};
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initMonthNav(MONTHS, CURRENT_MONTH);
+    });
+
+    function editBudget(id, currentAmount) {
+        document.getElementById('edit-budget-id').value = id;
+        document.getElementById('edit-amount').value = currentAmount;
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+
+    function deleteBudget(id) {
+        if (!confirm('Supprimer cette enveloppe ?')) return;
+        fetch('/api/budgets/' + id + '/delete', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) window.location.reload();
+            });
+    }
+</script>
+{% endif %}
+{% endblock %}

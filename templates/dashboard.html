@@ -54,6 +54,27 @@
     </div>
 </div>
 
+<!-- Month comparison -->
+{% if comparison %}
+<div class="card">
+    <h2>Comparaison avec le mois precedent</h2>
+    <div class="comparison-grid">
+        {% for c in comparison %}
+        <div class="comparison-row">
+            <span class="comparison-category">{{ c.icon }} {{ c.name }}</span>
+            <span class="comparison-current">{{ "%.2f"|format(c.current) }}&euro;</span>
+            <span class="comparison-delta {% if c.delta > 0 %}expense{% elif c.delta < 0 %}income{% endif %}">
+                {% if c.delta > 0 %}+{% endif %}{{ "%.2f"|format(c.delta) }}&euro;
+                {% if c.delta_pct is not none %}
+                ({% if c.delta_pct > 0 %}+{% endif %}{{ c.delta_pct }}%)
+                {% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Top expenses -->
 {% if top_expenses %}
 <div class="card">

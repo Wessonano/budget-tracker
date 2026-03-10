@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Resume mensuel — Budget Tracker{% endblock %}
+{% block content %}
+
+{% if not month %}
+<div class="empty-state">
+    <span class="empty-icon">&#128202;</span>
+    <h2>Aucune donnee disponible</h2>
+    <p>Aucun releve n'a encore ete importe.</p>
+</div>
+{% else %}
+
+<div class="share-header">
+    <h1>Resume mensuel</h1>
+    <p class="share-subtitle">{{ month }}</p>
+</div>
+
+<!-- Month selector -->
+{% if months | length > 1 %}
+<div class="share-month-select">
+    <select onchange="window.location.search='?month='+this.value" class="filter-select">
+        {% for m in months %}
+        <option value="{{ m }}" {{ 'selected' if m == month else '' }}>{{ m }}</option>
+        {% endfor %}
+    </select>
+</div>
+{% endif %}
+
+<!-- Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <span class="stat-label">Depenses</span>
+        <span class="stat-value expense">{{ "%.2f"|format(summary.total_depenses) }} &euro;</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-label">Revenus</span>
+        <span class="stat-value income">{{ "%.2f"|format(summary.total_revenus) }} &euro;</span>
+    </div>
+    {% if solde_initial is not none %}
+    <div class="stat-card">
+        <span class="stat-label">Solde initial</span>
+        <span class="stat-value">{{ "%.2f"|format(solde_initial) }} &euro;</span>
+    </div>
+    {% endif %}
+    <div class="stat-card">
+        <span class="stat-label">Transactions</span>
+        <span class="stat-value">{{ summary.tx_count }}</span>
+    </div>
+</div>
+
+<!-- Category donut -->
+<div class="card">
+    <h2>Depenses par categorie</h2>
+    <div class="chart-container">
+        <canvas id="share-donut"></canvas>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if month %}
+<script src="/static/js/charts.js"></script>
+<script>
+    const CATEGORY_DATA = {{ summary.categories | tojson }};
+    document.addEventListener('DOMContentLoaded', function() {
+        initCategoryDonut('share-donut', CATEGORY_DATA);
+    });
+</script>
+{% endif %}
+{% endblock %}

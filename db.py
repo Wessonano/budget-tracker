@@ -100,9 +100,12 @@ DEFAULT_PATTERNS = [
 
 def init_db(data_dir: str) -> sqlite3.Connection:
     """Create data dir and initialize SQLite with full schema."""
-    os.makedirs(data_dir, exist_ok=True)
-    db_path = os.path.join(data_dir, "budget.db")
-    db = sqlite3.connect(db_path)
+    if data_dir == ":memory:":
+        db = sqlite3.connect(":memory:")
+    else:
+        os.makedirs(data_dir, exist_ok=True)
+        db_path = os.path.join(data_dir, "budget.db")
+        db = sqlite3.connect(db_path)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(SCHEMA)
@@ -348,3 +351,105 @@ def get_top_expenses(db: sqlite3.Connection, month: str, limit: int = 5) -> list
         (month, limit),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- Phase 3 functions ---
+
+
+def get_setting(db: sqlite3.Connection, key: str) -> str | None:
+    row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_setting(db: sqlite3.Connection, key: str, value: str):
+    db.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?",
+        (key, value, value),
+    )
+    db.commit()
+
+
+def get_budgets_with_spending(db: sqlite3.Connection, month: str) -> list[dict]:
+    """Get all active budgets with current month spending."""
+    rows = db.execute(
+        """SELECT b.id, b.category_id, b.amount_max, b.active,
+                  c.name as category_name, c.icon as category_icon, c.color as category_color,
+                  COALESCE(SUM(CASE WHEN t.montant < 0 THEN ABS(t.montant) ELSE 0 END), 0) as spent
+           FROM budgets b
+           JOIN categories c ON b.category_id = c.id
+           LEFT JOIN transactions t ON t.category_id = b.category_id
+                AND strftime('%Y-%m', t.date_operation) = ?
+           WHERE b.active = 1
+           GROUP BY b.id
+           ORDER BY c.sort_order""",
+        (month,),
+    ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["percent"] = round((d["spent"] / d["amount_max"]) * 100, 1) if d["amount_max"] > 0 else 0
+        result.append(d)
+    return result
+
+
+def insert_budget(db: sqlite3.Connection, category_id: int, amount_max: float) -> int:
+    cur = db.execute(
+        "INSERT INTO budgets (category_id, amount_max) VALUES (?, ?)",
+        (category_id, amount_max),
+    )
+    db.commit()
+    return cur.lastrowid
+
+
+def update_budget(db: sqlite3.Connection, budget_id: int, amount_max: float):
+    db.execute("UPDATE budgets SET amount_max = ? WHERE id = ?", (amount_max, budget_id))
+    db.commit()
+
+
+def delete_budget(db: sqlite3.Connection, budget_id: int):
+    db.execute("DELETE FROM budgets WHERE id = ?", (budget_id,))
+    db.commit()
+
+
+def get_budget_by_id(db: sqlite3.Connection, budget_id: int) -> dict | None:
+    row = db.execute(
+        "SELECT b.*, c.name as category_name FROM budgets b JOIN categories c ON b.category_id = c.id WHERE b.id = ?",
+        (budget_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def previous_month(month_str: str) -> str:
+    """'2026-02' -> '2026-01', '2026-01' -> '2025-12'"""
+    from datetime import datetime, timedelta
+    dt = datetime.strptime(month_str, "%Y-%m")
+    prev = dt.replace(day=1) - timedelta(days=1)
+    return prev.strftime("%Y-%m")
+
+
+def get_month_comparison(db: sqlite3.Connection, current_month: str, previous_month_str: str) -> list[dict]:
+    """Compare spending between two months. Returns deltas per category."""
+    current = get_month_summary(db, current_month)
+    previous = get_month_summary(db, previous_month_str)
+
+    comparison = []
+    prev_map = {c["id"]: c for c in previous["categories"]}
+    for cat in current["categories"]:
+        prev_cat = prev_map.get(cat["id"], {})
+        prev_debit = prev_cat.get("total_debit", 0)
+        curr_debit = cat["total_debit"]
+        if prev_debit == 0 and curr_debit == 0:
+            continue
+        delta = curr_debit - prev_debit
+        delta_pct = round((delta / prev_debit) * 100, 1) if prev_debit > 0 else None
+        comparison.append({
+            "id": cat["id"],
+            "name": cat["name"],
+            "icon": cat["icon"],
+            "color": cat["color"],
+            "current": curr_debit,
+            "previous": prev_debit,
+            "delta": delta,
+            "delta_pct": delta_pct,
+        })
+    return comparison
