@@ -305,11 +305,10 @@ async def budgets_create(request):
     amount_max = float(data.get("amount_max", 0))
     budget_id = data.get("budget_id")
 
-    if category_id and amount_max > 0:
-        if budget_id:
-            update_budget(db, int(budget_id), amount_max)
-        else:
-            insert_budget(db, category_id, amount_max)
+    if budget_id and amount_max > 0:
+        update_budget(db, int(budget_id), amount_max)
+    elif category_id and amount_max > 0:
+        insert_budget(db, category_id, amount_max)
 
     month = data.get("month", "")
     raise web.HTTPFound(f"/budgets?month={month}" if month else "/budgets")
